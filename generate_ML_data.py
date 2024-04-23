@@ -1,16 +1,13 @@
 #!/usr/bin/python3
 
-import argparse,os
+import argparse
 import pandas as pd
 import os.path as osp
 import numpy as np
-import glob
-import seaborn as sns
 import matplotlib.pyplot as plt
 
-PLOT_ORIG = False
-DELAY_THRESHOLD = 300
-AREA_THRESHOLD = 40
+DEFAULT_DELAY_THRESHOLD = 300
+DEFAULT_AREA_THRESHOLD = 40
 
 def filter_module(group):
     """ Function to help filter out modules that don't have both an area and a
@@ -18,12 +15,44 @@ def filter_module(group):
     """
     return all(item in group['recipe_type'].values for item in ['delay', 'area'])
 
-def remove_basename(filepath):
-    return osp.dirname(filepath)
+def plot_percent_diffs(parsed_df):
+    plt.rcParams.update({'font.size': 16})
+    plt.subplot(121)
+    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_delay'], color='red')
+    plt.xlabel('Modules sorted by delay')
+    plt.ylabel("Percent difference in delay")
+    # parsed_df.plot.hist(x="module", y="percent_diff_delay", ax=ax)
+    plt.ylim([-100, 500])
+    plt.grid(axis='y')
+    plt.tick_params(
+        axis='x',          # changes apply to the x-axis
+        which='both',      # both major and minor ticks are affected
+        bottom=False,      # ticks along the bottom edge are off
+        top=False,         # ticks along the top edge are off
+        labelbottom=False) # labels along the bottom edge are off
+    
+    # ax.axhline(300, color='red')
 
+    plt.subplot(122)
+    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_area'], color='red')
+    plt.xlabel('Modules sorted by delay')
+    plt.ylabel("Percent difference in area")
+    plt.ylim([-100, 100])
+    plt.grid(axis='y')
+    plt.tick_params(
+        axis='x',          # changes apply to the x-axis
+        which='both',      # both major and minor ticks are affected
+        bottom=False,      # ticks along the bottom edge are off
+        top=False,         # ticks along the top edge are off
+        labelbottom=False) # labels along the bottom edge are off
+    
+    # ax.axhline(25, color='red')
+    plt.show()
 
-def main():
-    df = pd.read_csv('synthesis_data_nangate45nm_newarea.csv')
+    return
+
+def parse_synthesis_csv(input_csv, output_csv, delay_threshold, area_threshold, memory_label_csv=None):
+    df = pd.read_csv(input_csv)
 
     df.area = df.area.apply(pd.to_numeric, errors='coerce')
     df.delay = df.delay.apply(pd.to_numeric, errors='coerce')
@@ -35,24 +64,8 @@ def main():
     # drop empties
     df.dropna()
     
-    #plot area based on if recipe is delay or area 
-    if PLOT_ORIG:
-        fig, ax1 = plt.subplots()
-        colors = ["blue" if i == 'delay' else "orange" for i in df.recipe_type]
-        line2 = ax1.scatter(df.design, df.area, color=colors)
-        ax1.set_xticks(ax1.get_xticks(), ax1.get_xticklabels(), rotation=45, ha='right')
-        ax1.set_title("Area for each Design based on Recipe Type")
-        ax1.legend(['Recipe = Delay', 'Recipe = Area'])
-
-        fig, ax2 = plt.subplots()
-        colors = ["blue" if i == 'delay' else "orange" for i in df.recipe_type]
-        line2 = ax2.scatter(df.design, df.delay, color=colors)
-        ax2.set_xticks(ax1.get_xticks(), ax1.get_xticklabels(), rotation=45, ha='right')
-        ax2.set_title("Delay for each Design based on Recipe Type")
-        ax2.legend(['Recipe = Delay', 'Recipe = Area'])
-
     df_filtered = df.groupby('module').filter(filter_module)
-    df_filtered.to_csv('filtered.csv')
+    # df_filtered.to_csv('filtered.csv')
 
 
     delay_df = df_filtered[df_filtered['recipe_type'] == 'delay']
@@ -72,8 +85,8 @@ def main():
     # select only the relevant columns
     df_diffs = merged_df[['design', 'module', 'percent_diff_delay', 'percent_diff_area', 'module_path_delayoptimized']]
 
-    merged_df.to_csv('merged.csv')
-    df_diffs.to_csv('diffs.csv')
+    # merged_df.to_csv('merged.csv')
+    # df_diffs.to_csv('diffs.csv')
 
     df_diffs = df_diffs.rename(columns={"module_path_delayoptimized": "path_to_rtl"})
 
@@ -81,27 +94,27 @@ def main():
 
     # sort by delay difference
     df_diffs = df_diffs.sort_values('percent_diff_delay')
-    df_diffs.to_csv('sorted.csv')
+    # df_diffs.to_csv('sorted.csv')
 
     # read in memory labeled CSV
-    df_memlabels = pd.read_csv('training_data_memory_labels.csv')
-    df_merged_2 = pd.merge(df_diffs, df_memlabels[['path_to_rtl', 'memory']], on='path_to_rtl', how='inner')
-    df_merged_2.to_csv('merged_2.csv')
+    
     
 
-
     # add sensitivity
-    df_diffs['sensitive'] = (df_diffs['percent_diff_delay'] > DELAY_THRESHOLD) | (abs(df_diffs['percent_diff_area']) > AREA_THRESHOLD)
+    df_diffs['sensitive'] = (df_diffs['percent_diff_delay'] > delay_threshold) | (abs(df_diffs['percent_diff_area']) > area_threshold)
     df_diffs['sensitive'] = df_diffs['sensitive'].astype(int)
     # df_diffs['memory'] = merged_df_2['memory'].astype(int)
-    df_diffs['language'] = 'verilog'
+    df_diffs['language'] = 'verilog' 
 
     # df_final = df_diffs[['module', 'path_to_rtl', 'language', 'sensitive', 'memory']]
     df_final = df_diffs[['module', 'path_to_rtl', 'language', 'sensitive', 'percent_diff_area', 'percent_diff_delay']]
 
-    df_memlabels = pd.read_csv('training_data_memory_labels.csv')
-    df_final = pd.merge(df_final, df_memlabels[['path_to_rtl', 'memory']], on='path_to_rtl', how='inner')
+    if memory_label_csv is not None:
+        df_memlabels = pd.read_csv(memory_label_csv)
+        df_final = pd.merge(df_final, df_memlabels[['path_to_rtl', 'memory']], on='path_to_rtl', how='inner')
     # df_merged_2.to_csv('merged_2.csv')
+    else:
+        df_final['memory'] = 0
 
     df_final["path_to_rtl"] = df_final["path_to_rtl"].apply(osp.dirname) # only keep directory of RTL file and not the filename
 
@@ -113,41 +126,26 @@ def main():
     print(f"Percent sensitive: {total_sensitive / total_modules * 100}")
     
 
-    df_final.to_csv('/home/qualcomm_clinic/RTL_dataset/training_data_files_diffs_mem.csv')
+    df_final.to_csv(output_csv)
 
-    if False:
-        plt.rcParams.update({'font.size': 16})
-        plt.subplot(121)
-        plt.scatter(np.arange(len(df_diffs)), df_diffs['percent_diff_delay'], color='red')
-        plt.xlabel('Modules sorted by delay')
-        plt.ylabel("Percent difference in delay")
-        # df_diffs.plot.hist(x="module", y="percent_diff_delay", ax=ax)
-        plt.ylim([-100, 500])
-        plt.grid(axis='y')
-        plt.tick_params(
-            axis='x',          # changes apply to the x-axis
-            which='both',      # both major and minor ticks are affected
-            bottom=False,      # ticks along the bottom edge are off
-            top=False,         # ticks along the top edge are off
-            labelbottom=False) # labels along the bottom edge are off
-        
-        # ax.axhline(300, color='red')
+    return
 
-        plt.subplot(122)
-        plt.scatter(np.arange(len(df_diffs)), df_diffs['percent_diff_area'], color='red')
-        plt.xlabel('Modules sorted by delay')
-        plt.ylabel("Percent difference in area")
-        plt.ylim([-100, 100])
-        plt.grid(axis='y')
-        plt.tick_params(
-            axis='x',          # changes apply to the x-axis
-            which='both',      # both major and minor ticks are affected
-            bottom=False,      # ticks along the bottom edge are off
-            top=False,         # ticks along the top edge are off
-            labelbottom=False) # labels along the bottom edge are off
-        
-        # ax.axhline(25, color='red')
-        plt.show()
+
+def main():
+    default_output = '/home/qualcomm_clinic/RTL_dataset/training_data_files_diffs_mem.csv'
+    default_input = 'synthesis_data_nangate45nm_newarea.csv'
+
+    parser = argparse.ArgumentParser(description='Parse synthesis data CSV and generate training data for feature generation.')
+    parser.add_argument('input_csv', type=str, default=default_input, help='CSV containing module name, path to module, recipe type, delay, and area.')
+    parser.add_argument('output_csv', type=str, default=default_output, help='Output CSV file path')
+    parser.add_argument('-ml', '--memory_labels', type=str, default=None, help='CSV containing memory labels corresponding to the input CSV.')
+    parser.add_argument('-dt', '--delay_threshold', type=float, default=DEFAULT_DELAY_THRESHOLD, help='Percent difference between delay result in delay and area recipe to be considered sensitive.')
+    parser.add_argument('-at', '--area_threshold', type=float, default=DEFAULT_AREA_THRESHOLD, help='Percent difference between area result in delay and area recipe to be considered sensitive.')
+    args = parser.parse_args()
+
+    
+    parse_synthesis_csv(args.input_csv, args.output_csv, args.delay_threshold, args.area_threshold, memory_label_csv=args.memory_labels)
+    return
 
 
 if __name__ == "__main__":
