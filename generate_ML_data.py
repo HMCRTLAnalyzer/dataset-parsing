@@ -15,15 +15,18 @@ def filter_module(group):
     """
     return all(item in group['recipe_type'].values for item in ['delay', 'area'])
 
-def plot_percent_diffs(parsed_df):
+def plot_percent_diffs(parsed_df, result_img_path, delay_threshold, area_threshold):
+
     plt.rcParams.update({'font.size': 16})
+
+    # delay plot
     plt.subplot(121)
-    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_delay'], color='red')
+    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_delay'], color='blue')
     plt.xlabel('Modules sorted by delay')
     plt.ylabel("Percent difference in delay")
-    # parsed_df.plot.hist(x="module", y="percent_diff_delay", ax=ax)
-    plt.ylim([-100, 500])
+    plt.ylim([parsed_df['percent_diff_delay'].min() - 10, max(parsed_df['percent_diff_delay'].max(), delay_threshold) + 10])
     plt.grid(axis='y')
+   
     plt.tick_params(
         axis='x',          # changes apply to the x-axis
         which='both',      # both major and minor ticks are affected
@@ -31,13 +34,14 @@ def plot_percent_diffs(parsed_df):
         top=False,         # ticks along the top edge are off
         labelbottom=False) # labels along the bottom edge are off
     
-    # ax.axhline(300, color='red')
+    plt.axhline(delay_threshold, color='red')
 
+    # area plot
     plt.subplot(122)
-    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_area'], color='red')
+    plt.scatter(np.arange(len(parsed_df)), parsed_df['percent_diff_area'], color='blue')
     plt.xlabel('Modules sorted by delay')
     plt.ylabel("Percent difference in area")
-    plt.ylim([-100, 100])
+    plt.ylim([parsed_df['percent_diff_area'].min() - 10, max(parsed_df['percent_diff_area'].max(), area_threshold) + 10])    
     plt.grid(axis='y')
     plt.tick_params(
         axis='x',          # changes apply to the x-axis
@@ -46,8 +50,18 @@ def plot_percent_diffs(parsed_df):
         top=False,         # ticks along the top edge are off
         labelbottom=False) # labels along the bottom edge are off
     
-    # ax.axhline(25, color='red')
-    plt.show()
+    plt.axhline(area_threshold, color='red')
+    plt.axhline(-area_threshold, color='red')
+
+    # Set face color of current axes to white (non-transparent)
+    plt.gca().set_facecolor('white')
+
+    # Set face color of the current figure to transparent
+    plt.gcf().patch.set_facecolor('none')
+    
+    plt.tight_layout(pad=1.1)
+    plt.savefig(f"{result_img_path}.png", format='png', dpi=400, bbox_inches='tight')
+    # plt.show()
 
     return
 
@@ -128,7 +142,7 @@ def parse_synthesis_csv(input_csv, output_csv, delay_threshold, area_threshold, 
 
     df_final.to_csv(output_csv)
 
-    return
+    return df_final
 
 
 def main():
@@ -141,10 +155,13 @@ def main():
     parser.add_argument('-ml', '--memory_labels', type=str, default=None, help='CSV containing memory labels corresponding to the input CSV.')
     parser.add_argument('-dt', '--delay_threshold', type=float, default=DEFAULT_DELAY_THRESHOLD, help='Percent difference between delay result in delay and area recipe to be considered sensitive.')
     parser.add_argument('-at', '--area_threshold', type=float, default=DEFAULT_AREA_THRESHOLD, help='Percent difference between area result in delay and area recipe to be considered sensitive.')
+    parser.add_argument('-p', '--plot', type=str, default=None, help='Filename with no extension to save resulting percent difference plots')
     args = parser.parse_args()
 
     
-    parse_synthesis_csv(args.input_csv, args.output_csv, args.delay_threshold, args.area_threshold, memory_label_csv=args.memory_labels)
+    df_final = parse_synthesis_csv(args.input_csv, args.output_csv, args.delay_threshold, args.area_threshold, memory_label_csv=args.memory_labels)
+    if args.plot is not None:
+        plot_percent_diffs(df_final, args.plot, args.delay_threshold, args.area_threshold)
     return
 
 
